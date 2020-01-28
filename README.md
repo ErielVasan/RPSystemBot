@@ -1,8 +1,3 @@
-gspread
-oauth2client
-discord
-
-
 # RPSystemBot
 A Discord Bot for management of a RolePlaying System
 
