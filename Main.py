@@ -59,17 +59,32 @@ async def on_message(message):
             skill_names = skills.row_values(1)
             skill_names = skill_names[1:19]
             skill_names = [name.lower() for name in skill_names]
+            targetable_skills = skill_names[1:4]
+            targetable_skills.append(skill_names[7])
+            targetable_skills.append(skill_names[8])
+            print(targetable_skills)
             await channel.send('What skill would you like to roll?')
 
-            def check(m):
+            def skill_check(m):
                 return m.content.lower() in skill_names and m.channel == channel
 
             try:
-                skill_selection = await discord_client.wait_for('message', timeout=10, check=check)
+                skill_selection = await discord_client.wait_for('message', timeout=10, check=skill_check)
             except asyncio.TimeoutError:
                 await channel.send('You have not entered a valid skill, please try to roll again!')
             else:
                 skill_selection = skill_selection.content
+
+                if skill_selection.lower() in targetable_skills:
+                    print('in')
+                    await  channel.send('Please select a target')
+                    character_names.append('storyteller')
+
+                    def target_check(m):
+                        return m.content.lower() in character_names and m.channel == channel
+
+                    target = await discord_client.wait_for('message', timeout=10, check=target_check)
+                    print(target.content)
                 skill_column = skill_names.index(skill_selection.lower()) + 2
                 skill_level = skills.cell(character_row, skill_column).value
                 dice_roll = random.randint(1, 100)
