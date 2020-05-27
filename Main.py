@@ -18,79 +18,128 @@ spreadsheet = google_client.open(spreadsheet_names[0])
 skills = spreadsheet.worksheet('Skills')
 xp = spreadsheet.worksheet('XP')
 
+currentHP = skills.col_values(2)
+currentHP = currentHP[1:]
+
 # Discord connection
 token = json.load(open('Credentials.json'))['discord_token']
 discord_client = discord.Client()
-
-
 @discord_client.event
 async def on_message(message):
     channel = message.channel
     command = message.content
     command = command.lower()
+    members = message.guild.members
+    global currentHP
 
+    # check if message author is a storyteller
+    roles = message.author.roles
+    roles = roles[1:]
+    is_storyteller = False
+    for i in range(len(roles)):
+        if 'Storyteller' == roles[i].name:
+            is_storyteller = True
+            break
+
+    # Not checking self messages
     if message.author == discord_client.user:
         return
 
+    # Basic ping-pong function
     if command.startswith('!ping'):
         await channel.send('Pong {0.author.mention}!'.format(message))
 
-    # To be generalised later
-    if command.startswith('!find '):
-        name = message.content[6:]
-        cell = skills.find(name)
-        cell2 = xp.find(name)
-        row_content = skills.row_values(cell.row)
-        row_content2 = skills.row_values(cell2.row)
-        if row_content == row_content2:
-            await channel.send(row_content)
+    # Check of a nickname in the list of members of the server.
+    if command.startswith('!note'):
+        print(message.guild.roles)
 
+    # Full restoration of current HP
+    if command.startswith('!restore'):
+        if is_storyteller:
+            currentHP = skills.col_values(2)
+            currentHP = currentHP[1:]
+            await channel.send('HP has been restored for all characters')
+        if not is_storyteller:
+            await channel.send("Only storytellers have access to this command!")
+
+    # Main Rolling Function
     if command.startswith('!roll '):
         character_names = skills.col_values(1)
         character_names = character_names[1:]
         character_names = [name.lower() for name in character_names]
+        player_names = skills.col_values(21)
+        player_names = player_names[1:]
         character_query = command[6:]
 
-        try:
-            character_row = character_names.index(character_query) + 2
-        except ValueError:
-            await channel.send('Character not found, please try again!')
+        if character_query == 'storyteller' and is_storyteller:
+            # TODO: Implement the storyteller rolls (simple dice 1-5 bonus)
+            await channel.send('This will be the storyteller only roll')
         else:
-            skill_names = skills.row_values(1)
-            skill_names = skill_names[1:19]
-            skill_names = [name.lower() for name in skill_names]
-            targetable_skills = skill_names[1:4]
-            targetable_skills.append(skill_names[7])
-            targetable_skills.append(skill_names[8])
-            print(targetable_skills)
-            await channel.send('What skill would you like to roll?')
+            try:  # find character name in the character names list
+                character_row = character_names.index(character_query) + 2
 
-            def skill_check(m):
-                return m.content.lower() in skill_names and m.channel == channel
+            except ValueError:  # if not found
+                await channel.send('Character not found, please try again!')
+            else:  # initialisation of skill lists
+                if player_names[character_row - 2] == message.author.display_name or is_storyteller:
 
-            try:
-                skill_selection = await discord_client.wait_for('message', timeout=10, check=skill_check)
-            except asyncio.TimeoutError:
-                await channel.send('You have not entered a valid skill, please try to roll again!')
-            else:
-                skill_selection = skill_selection.content
+                    skill_names = skills.row_values(1)
+                    skill_names = skill_names[1:19]
+                    skill_names = [name.lower() for name in skill_names]
+                    targetable_skills = skill_names[1:4]
+                    targeted_skills = skill_names[4:7]
+                    targetable_skills.append(skill_names[7])
+                    targetable_skills.append(skill_names[12])
+                    targeted_skills.append(skill_names[8])
+                    print(targetable_skills)
+                    await channel.send('What skill would you like to roll?')
 
-                if skill_selection.lower() in targetable_skills:
-                    print('in')
-                    await  channel.send('Please select a target')
-                    character_names.append('storyteller')
+                    def reply_check(m):
+                        return m.channel == channel and m.author == message.author
 
-                    def target_check(m):
-                        return m.content.lower() in character_names and m.channel == channel
+                    try:
+                        skill_selection = await discord_client.wait_for('message', timeout=10, check=reply_check)
+                    except asyncio.TimeoutError:
+                        await channel.send('You have not entered a valid skill, please try to roll again!')
+                    else:
+                        skill_selection = skill_selection.content.lower()
+                        if skill_selection in skill_names:
+                            skill_column = skill_names.index(skill_selection) + 2
+                            skill_level = skills.cell(character_row, skill_column).value
+                            author_dice_roll = random.randint(1, 100)
+                            author_bonus = 24 * (int(skill_level) - 1)
+                            author_total = author_dice_roll + author_bonus
+                            if skill_selection in targetable_skills:
+                                await  channel.send('Please select a target')
 
-                    target = await discord_client.wait_for('message', timeout=10, check=target_check)
-                    print(target.content)
-                skill_column = skill_names.index(skill_selection.lower()) + 2
-                skill_level = skills.cell(character_row, skill_column).value
-                dice_roll = random.randint(1, 100)
-                bonus = 24 * (int(skill_level) - 1)
-                total = dice_roll + bonus
-                await channel.send('[' + str(dice_roll) + ']' + ' + ' + str(bonus) + ' = ' + str(total))
+                                target = await discord_client.wait_for('message', timeout=10, check=reply_check)
+                                target = target.content.lower()
+
+                                if target == 'storyteller':
+                                    # TODO: Implement storyteller determining the outcome
+                                    await channel.send(
+                                        '{0.author.mention} ['.format(message) + str(author_dice_roll) + ']' + ' + ' +
+                                        str(author_bonus) + ' = ' + str(author_total))
+
+                                    await channel.send('To ask Storyteller if the player is successful.')
+                                elif target in character_names:
+                                    # TODO: Implement opposing rolls
+                                    await channel.send(
+                                        '{0.author.mention} ['.format(message) + str(author_dice_roll) + ']' + ' + ' +
+                                        str(author_bonus) + ' = ' + str(author_total))
+                                    await channel.send('Opposing roll here.')
+                                else:
+                                    await channel.send('Invalid Target!')
+                            else:
+                                # TODO: Same as if the target was Storyteller
+                                await channel.send(
+                                    '{0.author.mention} ['.format(message) + str(author_dice_roll) + ']' + ' + ' +
+                                    str(author_bonus) + ' = ' + str(author_total))
+                                await channel.send('To ask Storyteller if the player is successful.')
+                        else:
+                            await channel.send('Incorrect skill!')
+                else:
+                    await channel.send('You do not own this character, you can only roll your characters!')
 
 
 @discord_client.event
@@ -102,7 +151,7 @@ async def on_ready():
     google_login.start()
 
 
-@tasks.loop(minutes=60)
+@tasks.loop(minutes=30)
 async def google_login():
     print("Relogging", time.asctime())
     google_client.login()
