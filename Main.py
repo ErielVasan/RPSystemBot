@@ -92,14 +92,19 @@ async def on_message(message):
             else:
                 activity = 'off'
                 opposite_activity = 'on'
-            await channel.send('XP gains are currently turned ' + activity + '. Do you want to turn them ' + opposite_activity + '?')
-            answer = await discord_client.wait_for('message', timeout=10, check=yes_no_storyteller_check)
-            answer = answer.content.lower()
-            if answer.startswith('y'):
-                xp_active = not xp_active
-                await channel.send('XP gains have been turned ' + opposite_activity + '!')
+            await channel.send(
+                'XP gains are currently turned ' + activity + '. Do you want to turn them ' + opposite_activity + '?')
+            try:
+                answer = await discord_client.wait_for('message', timeout=10, check=yes_no_storyteller_check)
+            except asyncio.TimeoutError:
+                await channel.send('XP gains will remain ' + activity + '!')
             else:
-                await channel.send('XP gains will remain turned ' + activity + '!')
+                answer = answer.content.lower()
+                if answer.startswith('y'):
+                    xp_active = not xp_active
+                    await channel.send('XP gains have been turned ' + opposite_activity + '!')
+                else:
+                    await channel.send('XP gains will remain ' + activity + '!')
         else:
             await channel.send("Only storytellers have access to this command!")
 
@@ -122,17 +127,21 @@ async def on_message(message):
 
         if character_query == 'storyteller' and is_storyteller:
             await channel.send('Please enter the skill level (1-5) you wish to roll:')
-            skill_level = await discord_client.wait_for('message', timeout=10, check=reply_check)
-            skill_level = int(skill_level.content)
-            if 1 <= skill_level <= 5:
-                author_dice_roll = random.randint(1, 100)
-                author_bonus = 24 * (skill_level - 1)
-                author_total = author_dice_roll + author_bonus
-                await channel.send(
-                    '{0.author.mention} ['.format(message) + str(author_dice_roll) + ']' + ' + ' +
-                    str(author_bonus) + ' = ' + str(author_total))
+            try:
+                skill_level = await discord_client.wait_for('message', timeout=10, check=reply_check)
+            except asyncio.TimeoutError:
+                await channel.send('No skill level was given, please roll again')
             else:
-                await channel.send("You can only roll skills from 1-5!")
+                skill_level = int(skill_level.content)
+                if 1 <= skill_level <= 5:
+                    author_dice_roll = random.randint(1, 100)
+                    author_bonus = 24 * (skill_level - 1)
+                    author_total = author_dice_roll + author_bonus
+                    await channel.send(
+                        '{0.author.mention} ['.format(message) + str(author_dice_roll) + ']' + ' + ' +
+                        str(author_bonus) + ' = ' + str(author_total))
+                else:
+                    await channel.send("You can only roll skills from 1-5!")
         else:
             try:  # find character name in the character names list
                 character_row = character_names.index(character_query) + 2
@@ -174,41 +183,100 @@ async def on_message(message):
                             if skill_selection in targetable_skills:
 
                                 await  channel.send('Please select a target')
+                                try:
+                                    target = await discord_client.wait_for('message', timeout=10, check=reply_check)
+                                except asyncio.TimeoutError:
+                                    await channel.send('You have not entered a valid target, please try to roll again!')
+                                else:
+                                    target = target.content.lower()
 
-                                target = await discord_client.wait_for('message', timeout=10, check=reply_check)
-                                target = target.content.lower()
+                                    if target == 'storyteller':
 
-                                if target == 'storyteller':
+                                        await channel.send(
+                                            '{0.author.mention} ['.format(message) + str(
+                                                author_dice_roll) + ']' + ' + ' +
+                                            str(author_bonus) + ' = ' + str(author_total))
 
-                                    await channel.send(
-                                        '{0.author.mention} ['.format(message) + str(author_dice_roll) + ']' + ' + ' +
-                                        str(author_bonus) + ' = ' + str(author_total))
+                                        await channel.send(storyteller_mention + ' Was that check successful?')
+                                        try:
+                                            storyteller_answer = await discord_client.wait_for(
+                                                'message', timeout=60, check=yes_no_storyteller_check)
+                                        except asyncio.TimeoutError:
+                                            await channel.send('No answer was given, please wake up your storyteller!')
+                                        else:
+                                            storyteller_answer = storyteller_answer.content.lower()
+                                            skill_success = storyteller_answer.startswith('y')
 
-                                    await channel.send(storyteller_mention + ' Was that check successful?')
-                                    storyteller_answer = await discord_client.wait_for('message', timeout=60,
-                                                                                       check=yes_no_storyteller_check)
-                                    storyteller_answer = storyteller_answer.content.lower()
-                                    skill_success = storyteller_answer.startswith('y')
+                                    elif target in character_names and \
+                                            (target != character_query or skill_selection == 'biomedical'):
 
-                                elif target in character_names and \
-                                        (target != character_query or skill_selection == 'biomedical'):
+                                        has_target = True
+                                        is_biomedical = False
+                                        await channel.send(
+                                            '{0.author.mention} ['.format(message) + str(
+                                                author_dice_roll) + ']' + ' + ' +
+                                            str(author_bonus) + ' = ' + str(author_total))
+                                        target_name_index = character_names.index(target)
+                                        for i in range(len(members)):
+                                            if members[i].name == player_names[target_name_index]:
+                                                break
+                                        mention = members[i].mention
+                                        if skill_selection == 'biomedical':
+                                            is_biomedical = True
 
-                                    has_target = True
-                                    is_biomedical = False
-                                    await channel.send(
-                                        '{0.author.mention} ['.format(message) + str(author_dice_roll) + ']' + ' + ' +
-                                        str(author_bonus) + ' = ' + str(author_total))
-                                    target_name_index = character_names.index(target)
-                                    for i in range(len(members)):
-                                        if members[i].name == player_names[target_name_index]:
-                                            break
-                                    mention = members[i].mention
-                                    if skill_selection == 'biomedical':
-                                        is_biomedical = True
+                                            if int(current_HP[target_name_index]) != int(max_HP[target_name_index]):
+                                                target_dice_roll = random.randint(1, 100)
+                                                target_bonus = 24 * (int(current_HP[target_name_index]) - 1)
+                                                target_total = target_dice_roll + target_bonus
 
-                                        if int(current_HP[target_name_index]) != int(max_HP[target_name_index]):
+                                                await channel.send(
+                                                    mention + ' [' + str(target_dice_roll) + ']' + ' + ' +
+                                                    str(target_bonus) + ' = ' + str(target_total))
+
+                                                while author_total == target_total:
+                                                    await channel.send('There is a tie, rerolling!')
+                                                    author_dice_roll = random.randint(1, 100)
+                                                    author_total = author_dice_roll + author_bonus
+                                                    target_dice_roll = random.randint(1, 100)
+                                                    target_total = target_dice_roll + target_bonus
+                                                    await channel.send(
+                                                        '{0.author.mention} ['.format(message) + str(
+                                                            author_dice_roll) + ']' + ' + ' +
+                                                        str(author_bonus) + ' = ' + str(author_total))
+                                                    await channel.send(
+                                                        mention + ' [' + str(target_dice_roll) + ']' + ' + ' +
+                                                        str(target_bonus) + ' = ' + str(target_total))
+
+                                                if author_total > target_total:
+                                                    temp = int(current_HP[target_name_index])
+                                                    temp += 1
+                                                    current_HP[target_name_index] = str(temp)
+                                                    skill_success = True
+                                                    await channel.send(
+                                                        '{0.author.mention} You managed to restore 1 HP!'.format(
+                                                            message))
+                                                    await channel.send(
+                                                        mention + 'Your character gained 1 HP, current HP is: ' +
+                                                        current_HP[target_name_index])
+                                                else:
+                                                    await channel.send(
+                                                        '{0.author.mention} Your healing attempt was not '
+                                                        'successful!'.format(message))
+
+                                            else:
+                                                await channel.send(
+                                                    '{0.author.mention} Your target is at maximum health and cannot be '
+                                                    'healed further!'.format(message))
+                                                return
+
+                                        else:
+                                            matching_skill_index = targetable_skills.index(skill_selection)
+                                            matching_skill_column = skill_names.index(
+                                                targeted_skills[matching_skill_index]) + 2
+                                            targeted_skill_level = skills.cell(target_name_index + 2,
+                                                                               matching_skill_column).value
                                             target_dice_roll = random.randint(1, 100)
-                                            target_bonus = 24 * (int(current_HP[target_name_index]) - 1)
+                                            target_bonus = 24 * (int(targeted_skill_level) - 1)
                                             target_total = target_dice_roll + target_bonus
 
                                             await channel.send(mention + ' [' + str(target_dice_roll) + ']' + ' + ' +
@@ -228,95 +296,53 @@ async def on_message(message):
                                                     mention + ' [' + str(target_dice_roll) + ']' + ' + ' +
                                                     str(target_bonus) + ' = ' + str(target_total))
 
-                                            if author_total > target_total:
-                                                temp = int(current_HP[target_name_index])
-                                                temp += 1
-                                                current_HP[target_name_index] = str(temp)
-                                                skill_success = True
-                                                await channel.send(
-                                                    '{0.author.mention} You managed to restore 1 HP!'.format(message))
-                                                await channel.send(
-                                                    mention + 'Your character gained 1 HP, current HP is: ' +
-                                                    current_HP[target_name_index])
-                                            else:
-                                                await channel.send('{0.author.mention} Your healing attempt was not '
-                                                                   'successful!'.format(message))
-
-                                        else:
-                                            await channel.send(
-                                                '{0.author.mention} Your target is at maximum health and cannot be '
-                                                'healed further!'.format(message))
-                                            return
-
-                                    else:
-                                        matching_skill_index = targetable_skills.index(skill_selection)
-                                        matching_skill_column = skill_names.index(
-                                            targeted_skills[matching_skill_index]) + 2
-                                        targeted_skill_level = skills.cell(target_name_index + 2,
-                                                                           matching_skill_column).value
-                                        target_dice_roll = random.randint(1, 100)
-                                        target_bonus = 24 * (int(targeted_skill_level) - 1)
-                                        target_total = target_dice_roll + target_bonus
-
-                                        await channel.send(mention + ' [' + str(target_dice_roll) + ']' + ' + ' +
-                                                           str(target_bonus) + ' = ' + str(target_total))
-
-                                        while author_total == target_total:
-                                            await channel.send('There is a tie, rerolling!')
-                                            author_dice_roll = random.randint(1, 100)
-                                            author_total = author_dice_roll + author_bonus
-                                            target_dice_roll = random.randint(1, 100)
-                                            target_total = target_dice_roll + target_bonus
-                                            await channel.send(
-                                                '{0.author.mention} ['.format(message) + str(
-                                                    author_dice_roll) + ']' + ' + ' +
-                                                str(author_bonus) + ' = ' + str(author_total))
-                                            await channel.send(
-                                                mention + ' [' + str(target_dice_roll) + ']' + ' + ' +
-                                                str(target_bonus) + ' = ' + str(target_total))
-
-                                        if matching_skill_index < 3:  # if matching skill is a defence
-                                            if author_total > target_total:
-                                                if current_HP[target_name_index] != '0':
-                                                    temp = int(current_HP[target_name_index])
-                                                    temp -= 1
-                                                    current_HP[target_name_index] = str(temp)
-                                                    skill_success = True
-                                                    await channel.send(
-                                                        '{0.author.mention} The attack was successful!'.format(message))
-                                                    await channel.send(
-                                                        mention + 'Your character lost 1 HP, current HP is: ' +
-                                                        current_HP[target_name_index])
+                                            if matching_skill_index < 3:  # if matching skill is a defence
+                                                if author_total > target_total:
+                                                    if current_HP[target_name_index] != '0':
+                                                        temp = int(current_HP[target_name_index])
+                                                        temp -= 1
+                                                        current_HP[target_name_index] = str(temp)
+                                                        skill_success = True
+                                                        await channel.send(
+                                                            '{0.author.mention} The attack was successful!'.format(
+                                                                message))
+                                                        await channel.send(
+                                                            mention + 'Your character lost 1 HP, current HP is: ' +
+                                                            current_HP[target_name_index])
+                                                    else:
+                                                        await channel.send(
+                                                            '{0.author.mention} Your target cannot take more damage,'
+                                                            ' they have reached 0 HP already!'.format(message))
+                                                        return
                                                 else:
                                                     await channel.send(
-                                                        '{0.author.mention} Your target cannot take more damage,'
-                                                        ' they have reached 0 HP already!'.format(message))
-                                                    return
-                                            else:
-                                                await channel.send(
-                                                    '{0.author.mention} Your attack did not pass.'.format(message))
-                                        else:  # if matching skill is perception
-                                            if author_total > target_total:
-                                                await channel.send(
-                                                    '{0.author.mention} Success! You manage to remain unseen!'.format(
-                                                        message))
-                                                skill_success = True
-                                            else:
-                                                await channel.send(mention + 'Has spotted the stealther!')
+                                                        '{0.author.mention} Your attack did not pass.'.format(message))
+                                            else:  # if matching skill is perception
+                                                if author_total > target_total:
+                                                    await channel.send(
+                                                        '{0.author.mention} Success! You manage to remain '
+                                                        'unseen!'.format(message))
+                                                    skill_success = True
+                                                else:
+                                                    await channel.send(mention + 'Has spotted the stealther!')
 
-                                else:
-                                    await channel.send('Invalid target!')
-                                    return
+                                    else:
+                                        await channel.send('Invalid target!')
+                                        return
                             else:
                                 await channel.send(
                                     '{0.author.mention} ['.format(message) + str(author_dice_roll) + ']' + ' + ' +
                                     str(author_bonus) + ' = ' + str(author_total))
 
                                 await channel.send(storyteller_mention + ' Was that check successful?')
-                                storyteller_answer = await discord_client.wait_for('message', timeout=60,
-                                                                                   check=yes_no_storyteller_check)
-                                storyteller_answer = storyteller_answer.content.lower()
-                                skill_success = storyteller_answer.startswith('y')
+                                try:
+                                    storyteller_answer = await discord_client.wait_for('message', timeout=60,
+                                                                                       check=yes_no_storyteller_check)
+                                except asyncio.TimeoutError:
+                                    await channel.send('No answer was given, please wake up your storyteller!')
+                                else:
+                                    storyteller_answer = storyteller_answer.content.lower()
+                                    skill_success = storyteller_answer.startswith('y')
 
                             if xp_active:
                                 author_xp = xp.cell(character_row, skill_column - 1).value
@@ -330,7 +356,8 @@ async def on_message(message):
                                         else:
                                             author_xp += 4
                                         xp.update_cell(character_row, skill_column - 1, author_xp)
-                                        await channel.send('{0.author.mention} Your character gained 4 XP'.format(message))
+                                        await channel.send(
+                                            '{0.author.mention} Your character gained 4 XP'.format(message))
                                     else:
                                         await channel.send(
                                             '{0.author.mention} Your character cannot get more XP'.format(message))
@@ -349,7 +376,8 @@ async def on_message(message):
                                     if author_xp < 480 and author_powerlevel < 34:
                                         author_xp += 1
                                         xp.update_cell(character_row, skill_column - 1, author_xp)
-                                        await channel.send('{0.author.mention} Your character gained 1 XP'.format(message))
+                                        await channel.send(
+                                            '{0.author.mention} Your character gained 1 XP'.format(message))
                                     else:
                                         await channel.send(
                                             '{0.author.mention} Your character cannot get more XP'.format(message))
