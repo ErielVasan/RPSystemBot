@@ -160,7 +160,6 @@ async def on_message(message):
                     targetable_skills.append(skill_names[12])
                     targeted_skills.append(skill_names[8])
                     targeted_skills.append('endurance')
-                    print(targetable_skills)
                     await channel.send('What skill would you like to roll?')
 
                     try:
@@ -414,7 +413,7 @@ async def on_ready():
     google_login.start()
 
 
-@tasks.loop(minutes=30)
+@tasks.loop(minutes=60)
 async def google_login():
     print("Relogging", time.asctime())
     google_client.login()
